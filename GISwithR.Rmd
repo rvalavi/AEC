@@ -187,7 +187,7 @@ library(lubridate)
 class(wlb$timestamp)
 
 # change the timestamp col to time class in R
-wlb$timestamp <- as.POSIXlt(as.character(wlb$timestamp))
+wlb$timestamp <- as.POSIXlt(wlb$timestamp)
 class(wlb$timestamp)
 wlb$timestamp[1]
 
@@ -208,7 +208,7 @@ Clearly, this wallaby keeping the distance from the roads during the daytime whe
 
 ## Transforming projection
 
-So far all the data were in the *Mercator (latlog)* coordinate system. There are many cases (e.g. when accurate distance calculation is needed) that is coordinate system is not appropriate. We can transform the coordinate system to a more accurate local reference system for Victoria.
+So far all the data were in the *Mercator (latlog)* coordinate system. There are many cases (e.g. when accurate distance calculation is needed) that this coordinate system is not appropriate. We can transform the coordinate system to a more accurate local reference system for Victoria.
 
 Changing the projection to **VicGRID**: `EPSG:3111`.
 
