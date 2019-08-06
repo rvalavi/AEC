@@ -39,7 +39,7 @@ We use GPS data for several [swamp wallabies](https://en.wikipedia.org/wiki/Swam
 **The examples presented here are simplified examples that are used to make the quantitative ecology students familiar with a few GIS concepts.**   
 
 ```{r}
-wallabies <- read.csv("~/Desktop/Swamp wallabies on Phillips Island, Australia.csv")
+wallabies <- read.csv("data/Swamp wallabies on Phillips Island, Australia.csv")
 str(wallabies)
 
 ```
@@ -69,7 +69,7 @@ plot(st_geometry(wlbs), axes = TRUE) # plot the geometry
 Load Phillip island shapefile.
 
 ```{r}
-ph <- st_read("/Users/rvalavi/Desktop/Phillip_island.shp")
+ph <- st_read("data/Phillip_island.shp")
 
 plot(st_geometry(ph), axes = TRUE)
 # add the wallabies data
@@ -83,7 +83,7 @@ The `raster` package is the common library used for the analysis of raster data 
 
 ```{r}
 # reading raster from a file
-dem <- raster("/Users/rvalavi/Desktop/ASTGTM2_S39E145_dem.tif")
+dem <- raster("data/ASTGTM2_S39E145_dem.tif")
 
 dem
 
@@ -131,7 +131,7 @@ GeoPackage can have several layers in one singel `.gpkg` file. To see the layers
 
 ```{r}
 # list of the layers in GeoPackage file
-st_layers("~/Desktop/EcoloGIS.gpkg")
+st_layers("data/EcoloGIS.gpkg")
 
 ```
 
@@ -143,7 +143,7 @@ Here we load a GeoPackage file of the road map for Philip island. This file has 
 ```{r}
 # loading road map and filter it to classes 2, 3 and 4
 # quiet = TRUE to avoid printing layer's information
-roads <- st_read("~/Desktop/roads.gpkg", quiet = TRUE) %>% 
+roads <- st_read("data/roads.gpkg", quiet = TRUE) %>% 
   filter(rdclass %in% c(2, 3, 4))
 
 plot(roads)
@@ -296,7 +296,7 @@ text(r2, cex = .6)
 To write your spatial vector data in your hard disk, you can use `st_write()` function.
 
 ```{r eval=FALSE}
-st_write(wlb_proj, "~/Desktop/wallabies.gpkg")
+st_write(wlb_proj, "data/wallabies.gpkg")
 
 ```
 
