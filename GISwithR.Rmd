@@ -1,0 +1,320 @@
+---
+title: "Introduction to Spatial Analysis with R"
+author: "Roozbeh Valavi and Martin Tomko"
+date: "06-08-2019"
+output:
+  html_document:
+    code_folding: show
+    depth: 3
+    number_sections: no
+    theme: yeti
+    toc: no
+    toc_float: yes
+  pdf_document:
+    toc: yes
+subtitle: "Advanced Environmental Computation"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+## Import data
+
+```{r}
+# required packages
+# install.packages(c("sf", "raster", "tidyverse"))
+library(sf)
+library(raster)
+library(tidyverse)
+
+```
+
+We use GPS data for several [swamp wallabies](https://en.wikipedia.org/wiki/Swamp_wallaby) captured in Phillip Island, Victoria. The GPS collars recorded the spatial location of the wallabies in every ~15 minutes. This is very interesting spatial data as it has both location and time. We use this data for the examples in this tutorial. The data is downloaded in from [movebank](https://www.movebank.org/) online database.   
+
+**The examples presented here are simplified examples that are used to make the quantitative ecology students familiar with a few GIS concepts.**   
+
+```{r}
+wallabies <- read.csv("~/Desktop/Swamp wallabies on Phillips Island, Australia.csv")
+str(wallabies)
+
+```
+
+Showing the path of the first few GPS records.
+
+```{r}
+ggplot(aes(x = location.long, y = location.lat, col = as.numeric(timestamp)),
+       data = wallabies[1:150,]) +
+  geom_path() +
+  coord_sf() +
+  guides(col = FALSE) +
+  labs(x = "", y = "")
+
+```
+
+Now we can convert the data to [simple features](https://r-spatial.github.io/sf/articles/sf1.html). For this, we use `sf` package. Ths sf package provides simple feature access for R. The `sf` object is a `data.frame` with a *geometry list-column*. It supports different format and spatial references since it is connected to `GDAL` and `PROJ`.
+
+
+```{r}
+# convert csv to spatial (sf) object
+wlbs <- st_as_sf(wallabies, coords = c("location.long", "location.lat"), crs = 4326)
+plot(st_geometry(wlbs), axes = TRUE) # plot the geometry
+
+```
+
+Load Phillip island shapefile.
+
+```{r}
+ph <- st_read("/Users/rvalavi/Desktop/Phillip_island.shp")
+
+plot(st_geometry(ph), axes = TRUE)
+# add the wallabies data
+plot(st_geometry(wlbs), add = TRUE)
+
+```
+
+### Loading raster data
+
+The `raster` package is the common library used for the analysis of raster data in R. There few new packages that handle raster data types e.g. see [`stars`](https://cran.r-project.org/web/packages/stars/index.html) package.
+
+```{r}
+# reading raster from a file
+dem <- raster("/Users/rvalavi/Desktop/ASTGTM2_S39E145_dem.tif")
+
+dem
+
+```
+
+You can see the properties of the raster file including the resolution, dimensions and projection. You can print this information separately by different functions e.g. `res()` prints the resolution or `crs()` will show you the projection of the map.
+
+Now we plot our `dem` object.
+
+```{r}
+plot(dem)
+```
+
+As you can see, this is much bigger than the area of our wallabies and Phillip island. We can crop the raster map based on the Phillip island spatial object.
+
+```{r}
+# crop the dem raster by  extent of Phillip island
+dem_ph <- crop(dem, ph)
+
+plot(dem_ph)
+plot(st_geometry(wlbs), add = TRUE, pch = 20, col = alpha("blue", 0.4))
+plot(st_geometry(ph), add = TRUE)
+
+```
+
+You can extract the information of the raster to the points. Later, we use this information for plotting the data.
+
+Note: use `raster::` before the function, to avoid the conflicts with similar functions in other packages.
+
+```{r}
+wlbs$Elevation <- raster::extract(dem_ph, wlbs)
+
+plot(wlbs["Elevation"])
+
+```
+    
+    
+## Distance to road analysis
+
+In this analysis, we want to check if there is any relationship between the time of the day and distance of wallabies to the road. This can help us to assess the animal-vehicle collision.   
+
+Now, we want to read a spatial road data in [**GeoPackage**](https://www.geopackage.org/) data format. GeoPackage is an [**OGC**](http://www.opengeospatial.org/) standard and open format for transferring geospatial information. It is platform-independent, portable, and a compact format. We highly recommend using this format for saving spatial vector data to the disk.  
+
+GeoPackage can have several layers in one singel `.gpkg` file. To see the layers inside the data `st_layers()` function is used. See the example below. 
+
+```{r}
+# list of the layers in GeoPackage file
+st_layers("~/Desktop/EcoloGIS.gpkg")
+
+```
+
+
+Here we load a GeoPackage file of the road map for Philip island. This file has only one layer so there is no need for extra arguments in the `st_read()` function. But if the GeoPackage file is multi-layer and you want to import one of the layers, you should use `layer` argument and refer to the name of that layer.   
+
+
+
+```{r}
+# loading road map and filter it to classes 2, 3 and 4
+# quiet = TRUE to avoid printing layer's information
+roads <- st_read("~/Desktop/roads.gpkg", quiet = TRUE) %>% 
+  filter(rdclass %in% c(2, 3, 4))
+
+plot(roads)
+
+# plot individual wallabies on the raod map
+plot(st_geometry(roads))
+plot(wlbs["tag.local.identifier"], add = TRUE)
+
+```
+
+Spatial distance is a very important functionality in spatial analysis. Calculating the distance between features is very easy in GIS. Here we want to calculate the distance between the wallaby points and road lines.
+
+To calculate the spatial distance of the points to the line, `st_distance()` function is used. This function returns a dense distance matrix that shows the pairwise distance of every single feature in both datasets. The output object would be in `units` so we can convert it to numeric.
+
+Although in many GIS software the distance is calculated in the unit of the layer's reference system (here *degrees* for wallaby data), the `st_distance()` function returns the distance in **metres** unit. It calculates the distance with [**great-circle distance**](https://en.wikipedia.org/wiki/Great-circle_distance).   
+
+```{r}
+# select one of the individuals
+wlb <- filter(wlbs, tag.local.identifier == "MF031")
+
+# calculate the distance of every points to every line
+dist_road <- st_distance(wlb, roads)
+dim(dist_road) # dimension of the matrix
+
+# calculate the closest distance of every point to the roads
+wlb$mindist <- apply(dist_road, 1, min)
+
+plot(wlb["mindist"])
+
+```
+
+Now, we need to extract hours from the data-time column in the GPS tag data. For this purpose, **lubridate** R library is used. R reads the data with `factor` data type that is not relevant here. 
+
+
+```{r}
+# a library to work with date & time data
+# install.packages("lubridate")
+library(lubridate)
+
+# check the class of the timestamp col
+class(wlb$timestamp)
+
+# change the timestamp col to time class in R
+wlb$timestamp <- as.POSIXlt(as.character(wlb$timestamp))
+class(wlb$timestamp)
+wlb$timestamp[1]
+
+# extract hours from the date-time data type
+wlb$hours <- hour(wlb$timestamp)
+
+```
+
+```{r fig.height=4.5, fig.width=8}
+# plot the distance vs time with boxplots
+ggplot(data = wlb, aes(x = as.factor(hours), y = mindist)) +
+  geom_boxplot() +
+  labs(x = "Daily hours", y = "Distance to roads (m)")
+
+```
+
+Clearly, this wallaby keeping the distance from the roads during the daytime when the roads are busy. This might be due to the fact that they like to sleep during the days away from traffic noise.
+
+## Transforming projection
+
+So far all the data were in the *Mercator (latlog)* coordinate system. There are many cases (e.g. when accurate distance calculation is needed) that is coordinate system is not appropriate. We can transform the coordinate system to a more accurate local reference system for Victoria.
+
+Changing the projection to **VicGRID**: `EPSG:3111`.
+
+```{r}
+st_crs(3111)
+
+# project to VicGRID projection
+wlb_proj <- st_transform(wlbs, crs = 3111)
+plot(st_geometry(wlb_proj), axes = TRUE)
+
+```
+
+## Wallabies at risk
+
+Similar to the previous example, we want to see how many wallabies are at very close proximity to the roads (e.g. 50m) and might be at the risk of a road accident. This is easily done by calculating a buffer around the roads and see where the wallaby spatial point intersects with the buffer.   
+
+As discussed earlier, the distance calculation is mostly in the unit of the coordinate reference system. To create a buffer with 50m distance to the roads we need to change the road's reference system to VicGRID.
+
+```{r}
+# projecting road layer
+road_proj <- st_transform(roads, crs = 3111)
+
+# calculating buffer
+road_buf <- st_buffer(st_geometry(road_proj), dist = 50) %>% 
+  st_union() # merge all buffers to one single layer
+
+plot(road_buf)
+```
+
+```{r}
+# only keep the wallaby point that have intersection with buffer layer
+wlb_close_road <- st_intersection(wlb_proj, road_buf)
+
+# plot individual of wallabies close to roads
+plot(st_geometry(road_buf))
+plot(wlb_close_road["tag.local.identifier"], add = TRUE)
+
+```
+
+```{r}
+# which wallaby was close to road
+unique(wlb_close_road$tag.local.identifier)
+
+```
+
+## Data aggregation
+
+We can use some basic GIS tools to have a very simple representation of the amount of *wallabies habitat-use* in the landscape. This can be done by aggregating the points to a grid and calculating the density.   
+
+To have a very simple representation of the density of the points, we can count the number of point in an arbitrarily defined grid cells. An empty raster should be created, then the number of wallabies per grid cell will be counted.
+
+
+```{r fig.height=5.5, fig.width=8}
+# make an empty raster of 1000x1000 resolution
+r <- raster(wlb_proj, resolution = c(1000, 1000))
+
+# count the points in each cell
+ct <- rasterize(wlb_proj, r, fun="count", background = 0)[[1]]
+plot(ct)
+text(ct, cex = .6)
+
+```
+
+But as it has been discussed about the **Modifiable Areal Unit Problem (MAUP)**, different levels and forms of aggregation can result in a totally different result. You can see this issue in the following example.
+
+The raster package has an `aggregate` function that we will use. We specify that we want to aggregate sets of 2 columns, but not aggregate rows and vice versa. The values for the new cells should be computed from the original cells using the `mean` function.
+
+```{r fig.height=10, fig.width=8}
+r1 <- aggregate(ct, c(2, 1), fun = mean)
+
+r2 <- aggregate(ct, c(1, 2), fun = mean)
+
+par(mfrow=c(2,1))
+plot(r1)
+text(r1, cex = .6)
+plot(r2)
+text(r2, cex = .6)
+
+
+```
+
+
+## Writing spatial data
+
+To write your spatial vector data in your hard disk, you can use `st_write()` function.
+
+```{r eval=FALSE}
+st_write(wlb_proj, "~/Desktop/wallabies.gpkg")
+
+```
+
+You can read `.gpkg` format the same way you read .shp files (with `st_read` function). *GeoPackage* is supported by **GDAL**, it means that you can read and write them in all (updated) GIS software like **QGIS**.
+
+## Plotting
+
+We want to plot the individual wallaby we selected for the road distance and show it with space-time cude. **Note: the plot is interactive.**
+
+```{r}
+library(rgl)
+library(rglwidget)
+library(htmltools)
+
+with(wlb, plot3d(utm.easting, utm.northing, timestamp, type = "l", col = as.integer(wlb$mindist)))
+(stcube <- with(wlb, plot3d(utm.easting, utm.northing, timestamp, type = "l", col = as.numeric(cut(wlb$Elevation, 5)), alpha = 0.4)))
+rglwidget() 
+
+```
+    
+    
